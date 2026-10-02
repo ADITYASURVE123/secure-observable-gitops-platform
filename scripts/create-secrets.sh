@@ -14,7 +14,8 @@ if kubectl -n "$NAMESPACE" get secret orders-db >/dev/null 2>&1; then
   exit 0
 fi
 
-password="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+# od reads a fixed 24 bytes, so there is no early-closing pipe (SIGPIPE) under pipefail.
+password="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 kubectl -n "$NAMESPACE" create secret generic orders-db \
   --from-literal=username=orders \
   --from-literal=password="$password" >/dev/null
