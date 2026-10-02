@@ -25,7 +25,9 @@ RUN groupadd --gid 10001 app \
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /srv
 COPY orders_api ./orders_api
-ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ARG APP_VERSION=dev
+# Baked in at build time (CI passes the git SHA) so the running version is always discoverable.
+ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 APP_VERSION=$APP_VERSION
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s \
