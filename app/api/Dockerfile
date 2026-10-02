@@ -2,7 +2,7 @@
 # Stages: builder -> test -> runtime. `docker build` with no --target produces the
 # runtime image; CI runs `--target test` so the pipeline needs no Python on the agent.
 
-FROM python:3.12.8-slim-bookworm AS builder
+FROM python:3.12.12-slim-bookworm AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
@@ -18,10 +18,15 @@ COPY orders_api ./orders_api
 COPY tests ./tests
 RUN pytest
 
-FROM python:3.12.8-slim-bookworm AS runtime
+FROM python:3.12.12-slim-bookworm AS runtime
 # Fixed numeric UID/GID so Kubernetes `runAsNonRoot` can verify the user without name lookup.
 RUN groupadd --gid 10001 app \
  && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
+# Patch fixable OS CVEs at build time, and drop packaging tools the app never uses
+# (setuptools/wheel are a common source of scanner findings in python base images).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip uninstall -y setuptools wheel pip || true
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /srv
 COPY orders_api ./orders_api

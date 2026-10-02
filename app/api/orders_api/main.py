@@ -9,6 +9,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import Settings
 from .metrics import Metrics
@@ -42,7 +43,6 @@ def create_app(repo: OrderRepository | None = None) -> FastAPI:
     app = FastAPI(title="Orders API", version=settings.version, lifespan=lifespan)
     app.state.repo = repo
 
-    @app.middleware("http")
     async def observe(request: Request, call_next):
         # Scrapes would otherwise dominate (and skew) the request metrics.
         if request.url.path == "/metrics":
@@ -69,6 +69,8 @@ def create_app(repo: OrderRepository | None = None) -> FastAPI:
                     }
                 )
             )
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=observe)
 
     @app.get("/health")
     def health() -> dict:
