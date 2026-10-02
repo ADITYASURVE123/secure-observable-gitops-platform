@@ -8,7 +8,9 @@ COPY src ./src
 RUN node build.mjs
 
 # nginx-unprivileged runs as UID 101 and listens on 8080, so no capabilities are needed.
-FROM nginxinc/nginx-unprivileged:1.27.3-alpine3.20 AS runtime
+FROM nginxinc/nginx-unprivileged:1.29.1-alpine3.22 AS runtime
+USER root
+RUN apk upgrade --no-cache   # pick up fixed Alpine packages (keeps the Trivy gate green)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/dist /usr/share/nginx/html
 USER 101
