@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Harbor Orders</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Harbor Orders</h1>
+    <p class="build">frontend build <code>__BUILD_VERSION__</code></p>
+  </header>
+
+  <main>
+    <section aria-labelledby="orders-h" class="panel">
+      <h2 id="orders-h">Orders</h2>
+      <form id="order-form" class="row">
+        <label>Item <input name="item" required maxlength="100" autocomplete="off"></label>
+        <label>Quantity <input name="quantity" type="number" min="1" max="1000" value="1" required></label>
+        <button type="submit">Place order</button>
+      </form>
+      <p id="order-msg" role="status" class="msg"></p>
+      <table>
+        <thead><tr><th>#</th><th>Item</th><th class="num">Qty</th><th>Placed</th></tr></thead>
+        <tbody id="orders"><tr><td colspan="4" class="empty">No orders yet. Place the first one above.</td></tr></tbody>
+      </table>
+    </section>
+
+    <aside class="panel" aria-labelledby="svc-h">
+      <h2 id="svc-h">Service status</h2>
+      <dl id="status">
+        <dt>API liveness</dt><dd id="st-health">checking…</dd>
+        <dt>Database</dt><dd id="st-ready">checking…</dd>
+        <dt>API version</dt><dd id="st-version">–</dd>
+      </dl>
+
+      <h2>Failure drill</h2>
+      <p class="hint">Sends traffic to the API's fault-injection endpoint so you can watch dashboards and alerts react.</p>
+      <form id="drill" class="stack">
+        <label>Error rate (%) <input name="rate" type="number" min="0" max="100" value="50"></label>
+        <label>Added latency (ms) <input name="delay" type="number" min="0" max="5000" value="0"></label>
+        <label>Requests <input name="count" type="number" min="1" max="500" value="25"></label>
+        <button type="submit" class="danger">Send failing requests</button>
+      </form>
+      <p id="drill-out" role="status" class="msg"></p>
+    </aside>
+  </main>
+  <script src="app.js" defer></script>
+</body>
+</html>
