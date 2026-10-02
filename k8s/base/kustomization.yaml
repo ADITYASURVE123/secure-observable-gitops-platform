@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: orders
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - api.yaml
+  - frontend.yaml
+configMapGenerator:
+  - name: api-config
+    literals:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=orders
+      - APP_ENV=base
+# Placeholders: overlays set the real registry and tag.
+images:
+  - name: orders-api
+    newName: orders-api
+    newTag: dev
+  - name: orders-frontend
+    newName: orders-frontend
+    newTag: dev
