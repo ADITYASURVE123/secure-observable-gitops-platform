@@ -1,6 +1,6 @@
 # GitOps overlay. This is the ONLY place the CI pipeline writes to: it bumps the two
 # `newTag` values below and commits. ArgoCD (Phase 3) then syncs the change.
-# Replace "your-github-user" with your GitHub account/org before the first pipeline run.
+# Registry namespace must be lowercase on GHCR. The pipeline rewrites name+tag via `kustomize edit set image`.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -12,8 +12,8 @@ configMapGenerator:
       - APP_ENV=staging
 images:
   - name: orders-api
-    newName: ghcr.io/your-github-user/orders-api
+    newName: ghcr.io/adityasurve123/orders-api
     newTag: bootstrap
   - name: orders-frontend
-    newName: ghcr.io/your-github-user/orders-frontend
+    newName: ghcr.io/adityasurve123/orders-frontend
     newTag: bootstrap
