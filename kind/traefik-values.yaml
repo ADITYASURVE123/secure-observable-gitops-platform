@@ -1,0 +1,25 @@
+# Traefik as the Ingress controller (chart pinned in the Makefile).
+# Why not ingress-nginx: upstream announced its retirement in 2026, and a portfolio
+# project should not be built on an unmaintained component.
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+deployment:
+  replicas: 1
+service:
+  type: ClusterIP            # no cloud LB on Kind; traffic enters via hostPort instead
+ports:
+  web:
+    hostPort: 80
+  websecure:
+    hostPort: 443
+# Pin to the control-plane node, the one that has the host port mappings (see kind-config.yaml).
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+logs:
+  access:
+    enabled: true
