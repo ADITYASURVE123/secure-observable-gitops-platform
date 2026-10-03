@@ -1,0 +1,17 @@
+# Top-level plugins (dependencies are resolved automatically).
+# Reproducibility: `make jenkins-lock` resolves every plugin + dependency to an exact version
+# and writes plugins.lock.txt. The Dockerfile installs from the lock file when it exists,
+# so builds are pinned. Commit plugins.lock.txt after generating it.
+configuration-as-code
+job-dsl
+workflow-aggregator
+git
+github
+credentials-binding
+plain-credentials
+docker-workflow
+timestamps
+ws-cleanup
+scmskip
+pipeline-stage-view
+prometheus
