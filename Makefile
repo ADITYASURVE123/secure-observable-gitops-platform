@@ -13,7 +13,8 @@ VERSION        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 .PHONY: help cluster-up build load secrets monitoring-secrets deploy undeploy-dev test validate verify-pins smoke status teardown \
 	argocd-up argocd-bootstrap argocd-password argocd-repo-creds gitops-status verify-gitops \
 	seal-secrets grafana-password urls load-test netpol-test trivy-report drill drill-summary \
-	jenkins-up jenkins-down jenkins-logs jenkins-lock jenkins-monitor-up package
+	jenkins-up jenkins-down jenkins-logs jenkins-lock jenkins-monitor-up package \
+	aws-ec2-up aws-ec2-output aws-ec2-down eks-up eks-down
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -143,6 +144,33 @@ jenkins-monitor-up: ## (optional) Scrape Jenkins build health into Prometheus/Gr
 
 package: ## Build dist/secure-observable-gitops-platform.zip
 	./scripts/package.sh
+
+aws-ec2-up: ## AWS: create the EC2 host with Terraform (needs aws/ec2/terraform/terraform.tfvars)
+	cd aws/ec2/terraform && terraform init && terraform apply
+
+aws-ec2-output: ## AWS: print the ssh / tunnel / stop commands
+	cd aws/ec2/terraform && terraform output
+
+aws-ec2-down: ## AWS: destroy everything Terraform created (stops all charges)
+	cd aws/ec2/terraform && terraform destroy
+
+eks-up: ## AWS EKS: cluster + gp3 storage + Traefik NLB restricted to MY_IP (e.g. make eks-up MY_IP=203.0.113.10)
+	$(if $(MY_IP),,$(error MY_IP is required, e.g. make eks-up MY_IP=$$(curl -s https://checkip.amazonaws.com)))
+	eksctl create cluster -f aws/eks/cluster.yaml
+	kubectl apply -f aws/eks/storageclass-gp3.yaml
+	-kubectl annotate storageclass gp2 storageclass.kubernetes.io/is-default-class- --overwrite
+	helm repo add traefik https://traefik.github.io/charts >/dev/null 2>&1 || true
+	helm repo update traefik >/dev/null
+	helm upgrade --install traefik traefik/traefik --version $(TRAEFIK_CHART) \
+	  --namespace traefik --create-namespace -f aws/eks/traefik-values.yaml \
+	  --set 'service.spec.loadBalancerSourceRanges={$(MY_IP)/32}' --wait --timeout 10m
+	@echo "Load balancer: $$(kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+
+eks-down: ## AWS EKS: delete apps' load balancer + volumes + cluster (see docs/AWS_DEPLOYMENT_GUIDE.md first)
+	-kubectl -n argocd delete application root --wait=true --timeout=300s
+	-kubectl delete pvc -A --all --wait=true --timeout=300s
+	-helm uninstall traefik -n traefik
+	eksctl delete cluster -f aws/eks/cluster.yaml --wait
 
 teardown: ## Delete the Kind cluster
 	kind delete cluster --name $(CLUSTER)

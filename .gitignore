@@ -18,3 +18,10 @@ reports/
 *.log
 .drill-state
 dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
