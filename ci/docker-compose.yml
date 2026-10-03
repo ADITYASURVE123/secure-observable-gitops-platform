@@ -1,0 +1,65 @@
+name: gitops-ci
+
+services:
+  # Docker daemon in its own container (docker-in-docker) so Jenkins never gets the HOST's
+  # /var/run/docker.sock, which would be root-equivalent on the laptop/server.
+  docker:
+    image: docker:27.4.1-dind
+    privileged: true            # required by dind; isolated to this throwaway daemon
+    restart: unless-stopped
+    environment:
+      DOCKER_TLS_CERTDIR: /certs  # daemon listens on 2376 with mutual TLS
+    volumes:
+      - docker-certs-ca:/certs/ca
+      - docker-certs-client:/certs/client
+      - docker-data:/var/lib/docker
+    networks:
+      ci:
+        aliases: [docker]
+
+  jenkins:
+    build:
+      context: .
+    image: gitops-jenkins:2.541.3
+    restart: unless-stopped
+    depends_on:
+      - docker
+    ports:
+      - "8081:8080"             # 8080 is taken by the app's ingress on the host
+    environment:
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc/jenkins.yaml
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_CERT_PATH: /certs/client
+      DOCKER_TLS_VERIFY: "1"
+      # Secrets come from ci/.env (git-ignored). `:?` fails fast with a clear message if unset.
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?run ./ci/scripts/init-env.sh}
+      REGISTRY_USER: ${REGISTRY_USER:?set REGISTRY_USER in ci/.env}
+      REGISTRY_TOKEN: ${REGISTRY_TOKEN:?set REGISTRY_TOKEN in ci/.env}
+      GIT_USER: ${GIT_USER:?set GIT_USER in ci/.env}
+      GIT_TOKEN: ${GIT_TOKEN:?set GIT_TOKEN in ci/.env}
+      GIT_REPO_URL: ${GIT_REPO_URL:?set GIT_REPO_URL in ci/.env}
+      REGISTRY: ${REGISTRY:-ghcr.io}
+      REGISTRY_NAMESPACE: ${REGISTRY_NAMESPACE:?set REGISTRY_NAMESPACE in ci/.env}
+      MANIFEST_BRANCH: ${MANIFEST_BRANCH:-main}
+      JENKINS_URL: ${JENKINS_URL:-http://localhost:8081/}
+    volumes:
+      - jenkins-home:/var/jenkins_home
+      - docker-certs-client:/certs/client:ro
+      - ./jenkins.yaml:/var/jenkins_home/casc/jenkins.yaml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/login"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    networks: [ci]
+
+networks:
+  ci: {}
+
+volumes:
+  jenkins-home: {}
+  docker-data: {}
+  docker-certs-ca: {}
+  docker-certs-client: {}
