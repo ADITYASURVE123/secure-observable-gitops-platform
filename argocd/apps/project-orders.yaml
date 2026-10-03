@@ -1,0 +1,21 @@
+# AppProject = the guardrails for the orders workloads: which repo they may come from,
+# which cluster/namespace they may land in, and which cluster-scoped kinds they may create.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: orders
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # must exist before the Applications that reference it
+spec:
+  description: Orders application (frontend, api, postgres)
+  sourceRepos:
+    - https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: orders
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace                      # the only cluster-scoped kind the app may create
+  orphanedResources:
+    warn: true                             # surface resources in the namespace that Git does not know about
