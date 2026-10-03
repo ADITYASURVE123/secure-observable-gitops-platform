@@ -1,0 +1,74 @@
+# Jenkins Configuration as Code. Every ${VAR} is resolved from the container environment
+# (docker-compose.yml <- ci/.env), so this file contains no secrets and is safe to commit.
+jenkins:
+  systemMessage: "Secure, Observable GitOps Platform - CI. Configured by JCasC; do not edit in the UI."
+  # Builds run on the controller to keep the demo to one container. In production you would set
+  # this to 0 and use ephemeral agents so untrusted builds never run beside credentials.
+  numExecutors: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          password: ${JENKINS_ADMIN_PASSWORD}
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: false
+  globalNodeProperties:
+    - envVars:
+        env:
+          - { key: REGISTRY, value: "${REGISTRY:-ghcr.io}" }
+          - { key: REGISTRY_NAMESPACE, value: "${REGISTRY_NAMESPACE}" }
+          - { key: MANIFEST_BRANCH, value: "${MANIFEST_BRANCH:-main}" }
+
+security:
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false   # the only DSL script is the one below, loaded from this reviewed file
+
+unclassified:
+  location:
+    url: "${JENKINS_URL:-http://localhost:8081/}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: registry-creds
+              description: "Push access to the container registry"
+              username: "${REGISTRY_USER}"
+              password: "${REGISTRY_TOKEN}"
+          - usernamePassword:
+              scope: GLOBAL
+              id: github-creds
+              description: "Read/write access to the manifests repo (Git only, never the cluster)"
+              username: "${GIT_USER}"
+              password: "${GIT_TOKEN}"
+
+jobs:
+  - script: >
+      pipelineJob('orders-platform') {
+        description('Build, test, scan, push, then update the GitOps manifests. Never deploys directly.')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url(System.getenv('GIT_REPO_URL'))
+                  credentials('github-creds')
+                }
+                branch('*/' + (System.getenv('MANIFEST_BRANCH') ?: 'main'))
+              }
+            }
+            scriptPath('ci/Jenkinsfile')
+            lightweight(false)
+          }
+        }
+        triggers {
+          scm('H/3 * * * *')
+        }
+      }
