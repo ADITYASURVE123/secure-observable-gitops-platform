@@ -4,7 +4,7 @@ A small three-tier app (frontend, FastAPI, Postgres) used to demonstrate a produ
 delivery platform: **CI security scanning, GitOps delivery, and observability**, all runnable
 on a laptop with Kind.
 
-> Status: **Phase 2 of 7** (CI). The full README (architecture diagram, tool
+> Status: **Phase 3 of 7** (CD). The full README (architecture diagram, tool
 > choices, incident write-up, screenshots) is completed in the final phase.
 
 ## Roadmap
@@ -13,7 +13,7 @@ on a laptop with Kind.
 |------:|-------|--------|
 | 1 | Kind cluster, Kustomize manifests, app running locally | done |
 | 2 | Jenkins (Docker, JCasC), Jenkinsfile with Trivy gate | done |
-| 3 | ArgoCD, app-of-apps, auto-sync + self-heal | todo |
+| 3 | ArgoCD, app-of-apps, auto-sync + self-heal | done |
 | 4 | kube-prometheus-stack, ServiceMonitor, Grafana dashboards | todo |
 | 5 | PrometheusRules, Alertmanager to Slack, Sealed Secrets | todo |
 | 6 | Trivy Operator, k6, NetworkPolicies, Jenkins health | todo |
@@ -42,6 +42,17 @@ open http://localhost:8081
 
 Full guide, token setup and troubleshooting: [docs/ci.md](docs/ci.md).
 
+## CD quick start (Phase 3)
+
+```bash
+make argocd-up         # Argo CD v3.3.6 on the cluster
+make argocd-bootstrap  # applies the root app; Argo CD then deploys k8s/overlays/staging
+make gitops-status
+make verify-gitops     # proves Jenkins has no way to deploy
+```
+
+Run order, demos and design notes: [docs/gitops.md](docs/gitops.md).
+
 ## Layout
 
 ```
@@ -52,7 +63,8 @@ k8s/overlays   dev (local images) and staging (GHCR images, edited by CI in Phas
 kind/          Cluster config and ingress controller values
 scripts/       Secret bootstrap and smoke test
 ci/            Jenkins (Dockerfile, compose, JCasC, plugins, Jenkinsfile)
-argocd/ monitoring/ load-test/ docs/   filled in by later phases
+argocd/        Argo CD install, bootstrap root app, app-of-apps children
+monitoring/ load-test/ docs/   monitoring and load tests arrive in later phases
 ```
 
 ## Design notes
