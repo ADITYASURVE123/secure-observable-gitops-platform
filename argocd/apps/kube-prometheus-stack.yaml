@@ -1,0 +1,31 @@
+# Two sources: the upstream Helm chart (pinned) + our values file from this repo ($values ref).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 81.4.2
+      helm:
+        releaseName: kube-prometheus-stack
+        valueFiles:
+          - $values/monitoring/kube-prometheus-stack/values.yaml
+    - repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true      # the Prometheus Operator CRDs exceed the client-side apply size limit
+    retry: { limit: 5, backoff: { duration: 15s, factor: 2, maxDuration: 5m } }

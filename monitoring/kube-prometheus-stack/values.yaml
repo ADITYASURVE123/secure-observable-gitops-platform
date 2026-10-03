@@ -1,0 +1,111 @@
+# kube-prometheus-stack tuned for a laptop Kind cluster. Chart version is pinned in
+# argocd/apps/kube-prometheus-stack.yaml.
+
+# Kind runs control-plane components bound to localhost, so these scrapes would always fail and
+# fire permanent "target down" alerts. Disable both the scrapes and their default alert rules.
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeEtcd: { enabled: false }
+kubeProxy: { enabled: false }
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeProxy: false
+
+prometheus:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [prometheus.localhost]
+    paths: [/]
+    pathType: Prefix
+  prometheusSpec:
+    retention: 7d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # Pick up ServiceMonitors/PrometheusRules from ANY namespace, not only ones labelled
+    # `release: kube-prometheus-stack`. This is what lets /monitoring live outside the Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1Gi }
+    # No PVC: data is lost if the pod is rescheduled. Fine for a demo; use a PVC in production.
+
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [alertmanager.localhost]
+    paths: [/]
+    pathType: Prefix
+  alertmanagerSpec:
+    # Mounts Secret `alertmanager-slack` at /etc/alertmanager/secrets/alertmanager-slack/.
+    # That Secret is produced from a SealedSecret (see scripts/seal-secrets.sh); the webhook URL
+    # is therefore never in values.yaml. The pod waits for the Secret to appear.
+    secrets: [alertmanager-slack]
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: "null"
+      group_by: [alertname, namespace]
+      group_wait: 10s          # short on purpose so the drill shows an alert quickly
+      group_interval: 1m
+      repeat_interval: 4h
+      routes:
+        # Only our own alerts page Slack. Everything else (generic Kubernetes noise) is still
+        # visible in the Alertmanager UI but stays out of the channel.
+        - receiver: slack
+          matchers:
+            - service =~ "orders|ci"
+        - receiver: "null"
+    inhibit_rules:
+      # If the crash-loop alert is firing, a warning for the same service is redundant.
+      - source_matchers: [severity = "critical"]
+        target_matchers: [severity = "warning"]
+        equal: [alertname, namespace]
+    receivers:
+      - name: "null"
+      - name: slack
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/alertmanager-slack/url
+            send_resolved: true
+            title: '{{ if eq .Status "firing" }}:rotating_light:{{ else }}:white_check_mark:{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+            text: |-
+              {{ range .Alerts }}*{{ .Labels.severity | toUpper }}* {{ .Annotations.summary }}
+              {{ .Annotations.description }}
+              {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|Runbook>{{ end }}
+              {{ end }}
+
+grafana:
+  admin:
+    # Existing Secret created by `make argocd-bootstrap` (random password, not in Git).
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [grafana.localhost]
+    path: /
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard      # any ConfigMap with this label becomes a dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
