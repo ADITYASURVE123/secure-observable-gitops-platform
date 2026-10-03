@@ -1,5 +1,8 @@
 # Execution guide: from zero to a running platform
 
+> **Want to run it on AWS?** Follow [AWS_DEPLOYMENT_GUIDE.md](AWS_DEPLOYMENT_GUIDE.md) (EC2 + Kind, or Amazon EKS, region `ap-south-1`).
+> It reuses the steps below and tells you exactly what changes. This guide covers running on your own computer.
+
 Follow the steps in order. Every step has a **check** so you know it worked before moving on.
 Total time: about 60-90 minutes the first time (image pulls dominate).
 
