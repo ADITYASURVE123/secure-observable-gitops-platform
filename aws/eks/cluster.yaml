@@ -1,0 +1,31 @@
+# eksctl cluster for the "real Kubernetes on AWS" path.  Create with: make eks-up MY_IP=<your.ip>
+# Check a STANDARD-support version first (avoid extended-support surcharges):
+#   aws eks describe-cluster-versions --region ap-south-1 --query 'clusterVersions[?status==`STANDARD_SUPPORT`].clusterVersion'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: gitops-platform
+  region: ap-south-1
+  version: "1.34"
+iam:
+  withOIDC: true                 # needed so the EBS CSI driver gets its own IAM role (IRSA)
+addons:
+  - name: vpc-cni
+    configurationValues: '{"enableNetworkPolicy":"true"}'   # makes the NetworkPolicies in k8s/base actually enforced
+  - name: coredns
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver     # PersistentVolumes (Postgres) on EBS gp3
+    wellKnownPolicies:
+      ebsCSIController: true
+managedNodeGroups:
+  - name: workers
+    instanceType: t3.large       # 2 vCPU / 8 GB x 3 nodes fits the platform comfortably
+    desiredCapacity: 3
+    minSize: 3
+    maxSize: 4
+    volumeSize: 40
+    volumeType: gp3
+    volumeEncrypted: true
+    # Nodes sit in public subnets to avoid the NAT-gateway cost. Their security group still blocks
+    # all inbound traffic from the internet; only the load balancer ports below are exposed.
+    privateNetworking: false
