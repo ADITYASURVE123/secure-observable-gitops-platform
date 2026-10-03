@@ -68,6 +68,19 @@ make test && make netpol-test     # 7. verify
 make drill                        # 8. incident drill (screenshots)
 ```
 
+## Run it on AWS (ap-south-1)
+
+Step-by-step guide with two paths, Terraform included: **[docs/AWS_DEPLOYMENT_GUIDE.md](docs/AWS_DEPLOYMENT_GUIDE.md)**.
+
+```bash
+make aws-ec2-up      # Path A: EC2 host via Terraform (single-IP SSH, IMDSv2, encrypted disk, budget alert)
+make eks-up MY_IP=$(curl -s https://checkip.amazonaws.com)    # Path B: Amazon EKS + gp3 + NLB limited to your IP
+```
+
+## Preview
+
+Screens of the running platform: **[docs/PREVIEW.md](docs/PREVIEW.md)**.
+
 ## Tool choices and why
 
 | Choice | Why (and the trade-off) |
