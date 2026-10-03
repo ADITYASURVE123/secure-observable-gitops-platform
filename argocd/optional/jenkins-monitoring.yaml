@@ -1,0 +1,21 @@
+# Not under argocd/apps/, so the root app does not create it automatically.
+# `make jenkins-monitor-up` applies this and wires Jenkins (Docker) into the Kind network.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins-monitoring
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+    targetRevision: main
+    path: monitoring/jenkins
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [SkipDryRunOnMissingResource=true, ServerSideApply=true]
+    retry: { limit: 5, backoff: { duration: 15s, factor: 2, maxDuration: 3m } }

@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jenkins
+  labels:
+    app.kubernetes.io/part-of: orders-platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jenkins
+  endpoints:
+    - port: http
+      path: /prometheus/        # exposed by the Jenkins "prometheus" plugin (see ci/plugins.txt)
+      interval: 30s

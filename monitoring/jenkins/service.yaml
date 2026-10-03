@@ -1,0 +1,13 @@
+# Selector-less Service: its Endpoints are created by scripts/link-jenkins-monitoring.sh because
+# Jenkins runs in Docker Compose on the host's Docker network, not inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+  labels:
+    app.kubernetes.io/name: jenkins
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

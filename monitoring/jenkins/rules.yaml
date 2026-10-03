@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: jenkins-alerts
+  labels:
+    app.kubernetes.io/part-of: orders-platform
+spec:
+  groups:
+    - name: jenkins
+      rules:
+        - alert: JenkinsDown
+          expr: up{job="jenkins"} == 0
+          for: 5m
+          labels: { severity: warning, service: ci }
+          annotations:
+            summary: "Jenkins metrics endpoint is unreachable"
+            description: "Prometheus cannot scrape Jenkins for 5 minutes."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#jenkinsdown"
+        - alert: JenkinsLastBuildFailed
+          # Prometheus plugin ordinal: 0 SUCCESS, 1 UNSTABLE, 2 FAILURE, 3 NOT_BUILT, 4 ABORTED.
+          expr: default_jenkins_builds_last_build_result_ordinal{jenkins_job="orders-platform"} == 2
+          for: 10m
+          labels: { severity: warning, service: ci }
+          annotations:
+            summary: "Last orders-platform pipeline run failed"
+            description: "The most recent build has been in FAILURE state for 10 minutes (often the Trivy gate: check the archived report)."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#jenkinslastbuildfailed"
