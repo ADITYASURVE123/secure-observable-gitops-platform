@@ -1,0 +1,29 @@
+# THE ONLY MANIFEST APPLIED BY HAND (`make argocd-bootstrap`).
+# App-of-apps: this "root" Application watches argocd/apps/ and creates every other
+# Application/AppProject found there. Adding a new component later = adding a file to Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # `default` on purpose: the restricted project that governs real workloads is itself
+  # created by this app (argocd/apps/project-orders.yaml), so root cannot depend on it.
+  project: default
+  source:
+    repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+    targetRevision: main
+    path: argocd/apps
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
