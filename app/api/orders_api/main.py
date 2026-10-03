@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import time
 from contextlib import asynccontextmanager
@@ -28,7 +29,7 @@ class OrderOut(OrderIn):
     created_at: datetime
 
 
-def create_app(repo: OrderRepository | None = None) -> FastAPI:
+def create_app(repo: OrderRepository | None = None, exit_fn=os._exit) -> FastAPI:
     settings = Settings.from_env()
     metrics = Metrics(version=settings.version)
 
@@ -112,6 +113,17 @@ def create_app(repo: OrderRepository | None = None) -> FastAPI:
         if random.random() * 100 < rate:  # noqa: S311 - not security-sensitive
             raise HTTPException(status_code=500, detail="injected failure")
         return {"injected": False, "rate": rate}
+
+    if settings.chaos_enabled:
+        # Incident-drill hook: makes the container exit so Kubernetes restarts it, which is what
+        # produces real restart counts for the crash-loop alert. kill -9 on PID 1 from inside the
+        # container does not work (the kernel ignores it), hence an explicit, env-gated endpoint.
+        # nginx hides /api/chaos/ from the outside; the drill calls it from inside the cluster.
+        @app.post("/chaos/crash", status_code=202)
+        async def crash() -> dict:
+            log.warning(json.dumps({"event": "chaos_crash_requested"}))
+            asyncio.get_running_loop().call_later(0.2, exit_fn, 1)
+            return {"crashing": True}
 
     return app
 

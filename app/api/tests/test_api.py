@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -86,3 +88,19 @@ def test_unknown_paths_do_not_explode_label_cardinality(client):
 def test_metrics_endpoint_is_not_self_counted(client):
     client.get("/metrics")
     assert not metric_line(client, 'http_requests_total{method="GET",path="/metrics"')
+
+
+def test_chaos_endpoint_absent_by_default(client):
+    assert client.post("/chaos/crash").status_code == 404
+
+
+def test_chaos_crash_calls_exit_when_enabled(monkeypatch):
+    monkeypatch.setenv("CHAOS_ENABLED", "true")
+    calls = []
+    app = create_app(repo=InMemoryRepository(), exit_fn=calls.append)
+    with TestClient(app) as c:
+        assert c.post("/chaos/crash").status_code == 202
+        deadline = time.time() + 3
+        while not calls and time.time() < deadline:
+            time.sleep(0.05)
+    assert calls == [1]

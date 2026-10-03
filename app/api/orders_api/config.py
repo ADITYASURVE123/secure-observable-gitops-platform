@@ -13,6 +13,7 @@ class Settings:
     db_password: str
     version: str
     environment: str
+    chaos_enabled: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -26,6 +27,8 @@ class Settings:
             db_password=os.getenv("DB_PASSWORD", ""),
             version=os.getenv("APP_VERSION", "dev"),
             environment=os.getenv("APP_ENV", "local"),
+            # Drill-only switch for /chaos/crash. Off unless an overlay turns it on.
+            chaos_enabled=os.getenv("CHAOS_ENABLED", "false").lower() == "true",
         )
 
     def conninfo(self) -> str:
