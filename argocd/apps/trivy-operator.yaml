@@ -1,0 +1,30 @@
+# In-cluster vulnerability + config scanning (complements the Trivy gate in CI, which only sees
+# images at build time). Wave 2: its ServiceMonitor needs the Prometheus Operator CRDs from wave 1.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trivy-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  sources:
+    - repoURL: https://aquasecurity.github.io/helm-charts/
+      chart: trivy-operator
+      targetRevision: 0.24.1
+      helm:
+        releaseName: trivy-operator
+        valueFiles:
+          - $values/monitoring/trivy-operator/values.yaml
+    - repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: trivy-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true, SkipDryRunOnMissingResource=true]
+    retry: { limit: 5, backoff: { duration: 15s, factor: 2, maxDuration: 5m } }

@@ -1,0 +1,16 @@
+# Trivy Operator: scans workloads in the orders namespace and publishes VulnerabilityReport /
+# ConfigAuditReport CRs plus Prometheus metrics. Chart version pinned in argocd/apps/trivy-operator.yaml.
+targetNamespaces: orders
+serviceMonitor:
+  enabled: true
+trivy:
+  ignoreUnfixed: true            # same policy as the CI gate: only report what can be fixed
+  severity: HIGH,CRITICAL
+operator:
+  scanJobsConcurrentLimit: 2     # keep a laptop responsive
+  vulnerabilityScannerEnabled: true
+  configAuditScannerEnabled: true
+  exposedSecretScannerEnabled: true
+  rbacAssessmentScannerEnabled: false
+  infraAssessmentScannerEnabled: false
+  clusterComplianceEnabled: false
