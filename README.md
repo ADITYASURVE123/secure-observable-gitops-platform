@@ -4,7 +4,7 @@ A small three-tier app (frontend, FastAPI, Postgres) used to demonstrate a produ
 delivery platform: **CI security scanning, GitOps delivery, and observability**, all runnable
 on a laptop with Kind.
 
-> Status: **Phase 1 of 7** (cluster and app). The full README (architecture diagram, tool
+> Status: **Phase 2 of 7** (CI). The full README (architecture diagram, tool
 > choices, incident write-up, screenshots) is completed in the final phase.
 
 ## Roadmap
@@ -12,7 +12,7 @@ on a laptop with Kind.
 | Phase | Scope | Status |
 |------:|-------|--------|
 | 1 | Kind cluster, Kustomize manifests, app running locally | done |
-| 2 | Jenkins (Docker, JCasC), Jenkinsfile with Trivy gate | todo |
+| 2 | Jenkins (Docker, JCasC), Jenkinsfile with Trivy gate | done |
 | 3 | ArgoCD, app-of-apps, auto-sync + self-heal | todo |
 | 4 | kube-prometheus-stack, ServiceMonitor, Grafana dashboards | todo |
 | 5 | PrometheusRules, Alertmanager to Slack, Sealed Secrets | todo |
@@ -32,6 +32,16 @@ open http://localhost:8080
 
 `make teardown` deletes the cluster.
 
+## CI quick start (Phase 2)
+
+```bash
+make jenkins-up      # first run creates ci/.env; add REGISTRY_TOKEN and GIT_TOKEN, then run again
+make jenkins-lock    # optional but recommended: pin all plugins, then commit ci/plugins.lock.txt
+open http://localhost:8081
+```
+
+Full guide, token setup and troubleshooting: [docs/ci.md](docs/ci.md).
+
 ## Layout
 
 ```
@@ -41,7 +51,8 @@ k8s/base       Namespace (PSA "restricted"), Postgres, API, frontend, Ingress
 k8s/overlays   dev (local images) and staging (GHCR images, edited by CI in Phase 2)
 kind/          Cluster config and ingress controller values
 scripts/       Secret bootstrap and smoke test
-argocd/ monitoring/ ci/ load-test/ docs/   filled in by later phases
+ci/            Jenkins (Dockerfile, compose, JCasC, plugins, Jenkinsfile)
+argocd/ monitoring/ load-test/ docs/   filled in by later phases
 ```
 
 ## Design notes
