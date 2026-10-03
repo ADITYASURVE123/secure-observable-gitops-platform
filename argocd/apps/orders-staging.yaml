@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: orders-staging
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: orders
+  source:
+    repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+    targetRevision: main
+    # Jenkins edits ONLY this path (new image tag). Argo CD deploys whatever Git says.
+    path: k8s/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: orders
+  revisionHistoryLimit: 10
+  syncPolicy:
+    automated:
+      prune: true        # resources removed from Git are removed from the cluster
+      selfHeal: true     # manual kubectl edits are reverted to the Git state
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
