@@ -1,0 +1,86 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: orders-platform
+spec:
+  groups:
+    # Recording rules: computed once, reused by alerts (cheaper, and the names document the SLIs).
+    - name: orders.recording
+      interval: 30s
+      rules:
+        - record: orders:http_requests:rate5m
+          expr: sum(rate(http_requests_total{job="api",namespace="orders"}[5m]))
+        - record: orders:http_errors:ratio_rate5m
+          expr: |
+            sum(rate(http_requests_total{job="api",namespace="orders",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total{job="api",namespace="orders"}[5m])), 0.0001)
+        - record: orders:http_request_duration_seconds:p95_5m
+          expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="api",namespace="orders"}[5m])))
+        # SLI for "99% of requests under 300ms": fraction of requests in the le="0.3" bucket.
+        - record: orders:http_latency_sli:ratio_rate5m
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{job="api",namespace="orders",le="0.3"}[5m]))
+            / clamp_min(sum(rate(http_request_duration_seconds_count{job="api",namespace="orders"}[5m])), 0.0001)
+        - record: orders:http_latency_sli:ratio_rate1h
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{job="api",namespace="orders",le="0.3"}[1h]))
+            / clamp_min(sum(rate(http_request_duration_seconds_count{job="api",namespace="orders"}[1h])), 0.0001)
+
+    - name: orders.alerts
+      rules:
+        - alert: OrdersPodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="orders"}[10m]) >= 3
+            or on (namespace, pod, container)
+            max by (namespace, pod, container) (kube_pod_container_status_waiting_reason{namespace="orders",reason="CrashLoopBackOff"}) == 1
+          for: 1m
+          labels: { severity: critical, service: orders }
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash-looping"
+            description: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} restarted repeatedly in the last 10 minutes."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#orderspodcrashlooping"
+
+        - alert: OrdersHighErrorRate
+          # > 5% of requests are 5xx for 5 minutes. The traffic guard avoids paging on a single failed request at night.
+          expr: orders:http_errors:ratio_rate5m > 0.05 and orders:http_requests:rate5m > 0.05
+          for: 5m
+          labels: { severity: critical, service: orders }
+          annotations:
+            summary: "API error rate is {{ $value | humanizePercentage }} (threshold 5%)"
+            description: "More than 5% of API requests returned 5xx for 5 minutes."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#ordershigherrorrate"
+
+        - alert: OrdersHighLatencyP95
+          expr: orders:http_request_duration_seconds:p95_5m > 0.3 and orders:http_requests:rate5m > 0.05
+          for: 5m
+          labels: { severity: warning, service: orders }
+          annotations:
+            summary: "API p95 latency is {{ $value | humanizeDuration }} (threshold 300ms)"
+            description: "95th percentile request latency has been above 300ms for 5 minutes."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#ordershighlatencyp95"
+
+        - alert: OrdersLatencySLOFastBurn
+          # Multi-window burn rate for the 99% / 300ms SLO (error budget = 1%). 14.4x burn
+          # over both 5m and 1h would exhaust a 30-day budget in about 2 days.
+          expr: |
+            (1 - orders:http_latency_sli:ratio_rate5m) > (14.4 * 0.01)
+            and (1 - orders:http_latency_sli:ratio_rate1h) > (14.4 * 0.01)
+            and orders:http_requests:rate5m > 0.05
+          for: 2m
+          labels: { severity: critical, service: orders }
+          annotations:
+            summary: "Latency SLO is burning error budget 14x too fast"
+            description: "Both the 5m and 1h windows exceed 14.4x the allowed share of requests slower than 300ms."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#orderslatencyslofastburn"
+
+        - alert: OrdersApiNoTargets
+          expr: absent(up{job="api",namespace="orders"} == 1)
+          for: 5m
+          labels: { severity: warning, service: orders }
+          annotations:
+            summary: "Prometheus has no healthy API target"
+            description: "No api pod is being scraped successfully for 5 minutes (not deployed, not ready, or ServiceMonitor mismatch)."
+            runbook_url: "https://github.com/ADITYASURVE123/secure-observable-gitops-platform/blob/main/docs/runbook.md#ordersapinotargets"
