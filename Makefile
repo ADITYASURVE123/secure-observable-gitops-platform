@@ -10,7 +10,7 @@ API_IMAGE      ?= orders-api:dev
 FRONTEND_IMAGE ?= orders-frontend:dev
 VERSION        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 
-.PHONY: help cluster-up build load secrets deploy test smoke jenkins-up status teardown
+.PHONY: help cluster-up build load secrets deploy test smoke status teardown jenkins-up jenkins-down jenkins-logs jenkins-lock
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -52,8 +52,19 @@ smoke: ## Smoke test against http://localhost:8080
 status: ## Show pods and ingress
 	kubectl -n $(NAMESPACE) get pods,svc,ingress -o wide
 
-jenkins-up: ## (Phase 2) Start Jenkins with JCasC
-	@echo "Jenkins is added in Phase 2 (ci/docker-compose.yml)."; exit 1
+jenkins-up: ## Start Jenkins (JCasC) + docker-in-docker; creates ci/.env on first run
+	./ci/scripts/init-env.sh
+	docker compose -f ci/docker-compose.yml up -d --build
+	@echo "Jenkins: http://localhost:8081  (user: admin, password: JENKINS_ADMIN_PASSWORD in ci/.env)"
+
+jenkins-down: ## Stop Jenkins (keeps volumes; add -v manually to wipe state)
+	docker compose -f ci/docker-compose.yml down
+
+jenkins-logs: ## Follow Jenkins logs
+	docker compose -f ci/docker-compose.yml logs -f jenkins
+
+jenkins-lock: ## Resolve Jenkins plugins to exact versions -> ci/plugins.lock.txt (commit it)
+	./ci/scripts/lock-plugins.sh
 
 teardown: ## Delete the Kind cluster
 	kind delete cluster --name $(CLUSTER)
