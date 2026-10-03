@@ -1,0 +1,148 @@
+// Declarative pipeline. Flow: test -> build -> scan (gate) -> push -> commit new tag to Git.
+// Jenkins never touches the cluster: ArgoCD (Phase 3) notices the Git change and deploys it.
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 30, unit: 'MINUTES')
+    disableConcurrentBuilds()          // two builds pushing manifests at once would race
+    buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+  }
+
+  triggers {
+    // Polling works on a laptop with no public URL. If you expose Jenkins (ngrok/smee),
+    // add a GitHub webhook to /github-webhook/ and builds start instantly instead.
+    githubPush()
+    pollSCM('H/3 * * * *')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        // The manifest-update commit below carries [skip ci]; this stops the pipeline
+        // from triggering itself in an endless loop.
+        scmSkip(deleteBuild: true, skipPattern: '.*\\[skip ci\\].*')
+        script {
+          env.GIT_SHA         = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
+          // Build number first keeps tags sortable; the SHA ties the image to its source commit.
+          env.IMAGE_TAG       = "b${env.BUILD_NUMBER}-${env.GIT_SHA}"
+          env.API_IMAGE       = "${env.REGISTRY}/${env.REGISTRY_NAMESPACE}/orders-api:${env.IMAGE_TAG}"
+          env.FRONTEND_IMAGE  = "${env.REGISTRY}/${env.REGISTRY_NAMESPACE}/orders-frontend:${env.IMAGE_TAG}"
+        }
+        sh 'mkdir -p reports'
+      }
+    }
+
+    stage('Unit Test') {
+      steps {
+        // Tests run inside the Dockerfile's `test` stage, so the agent needs no Python.
+        // --no-cache-filter forces a real test run instead of a cached layer.
+        sh '''#!/usr/bin/env bash
+set -euo pipefail
+docker build --target test --no-cache-filter test --progress=plain \
+  -t orders-api:test app/api 2>&1 | tee reports/unit-tests.log
+'''
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        sh '''#!/usr/bin/env bash
+set -euo pipefail
+docker build --build-arg APP_VERSION="$IMAGE_TAG" -t "$API_IMAGE" app/api
+docker build --build-arg BUILD_VERSION="$IMAGE_TAG" -t "$FRONTEND_IMAGE" app/frontend
+'''
+      }
+    }
+
+    stage('Trivy Scan') {
+      steps {
+        // Pass 1 always writes the JSON report (so it is archived even when the gate fails).
+        // Pass 2 prints the table and is the gate: exit 1 on any fixable HIGH/CRITICAL.
+        // --ignore-unfixed: only fail on vulnerabilities that have a patch available.
+        // Accepted risks go in .trivyignore with a justification and an expiry date.
+        sh '''#!/usr/bin/env bash
+set -euo pipefail
+COMMON="--severity HIGH,CRITICAL --ignore-unfixed --ignorefile .trivyignore"
+for pair in "api:$API_IMAGE" "frontend:$FRONTEND_IMAGE"; do
+  name="${pair%%:*}"; image="${pair#*:}"
+  trivy image $COMMON --format json  --output "reports/trivy-${name}.json" --exit-code 0 "$image"
+  trivy image --format cyclonedx --output "reports/sbom-${name}.cdx.json" "$image"
+  echo "=== Trivy gate: ${name} ==="
+  trivy image $COMMON --format table --exit-code 1 "$image"
+done
+# IaC/misconfiguration scan of the manifests: report only (does not fail the build).
+trivy config --severity HIGH,CRITICAL --format json --output reports/trivy-config.json k8s/base || true
+'''
+      }
+    }
+
+    stage('Push Images') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'registry-creds',
+                                          usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+          // Credentials are exposed as env vars only (single-quoted script: no Groovy interpolation,
+          // so they never land in the build log). A throwaway DOCKER_CONFIG keeps the login off disk.
+          sh '''#!/usr/bin/env bash
+set -euo pipefail
+export DOCKER_CONFIG="$(mktemp -d)"
+trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+echo "$REG_PASS" | docker login "$REGISTRY" -u "$REG_USER" --password-stdin
+docker push "$API_IMAGE"
+docker push "$FRONTEND_IMAGE"
+{
+  docker inspect --format '{{index .RepoDigests 0}}' "$API_IMAGE"
+  docker inspect --format '{{index .RepoDigests 0}}' "$FRONTEND_IMAGE"
+} > reports/image-digests.txt
+'''
+        }
+      }
+    }
+
+    stage('Update Manifests') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-creds',
+                                          usernameVariable: 'MANIFEST_GIT_USER', passwordVariable: 'MANIFEST_GIT_PASS')]) {
+          sh '''#!/usr/bin/env bash
+set -euo pipefail
+git config user.name  "jenkins-ci"
+git config user.email "jenkins-ci@users.noreply.github.com"
+
+# Credentials are supplied to git through an env-reading helper, never embedded in the URL.
+g() { git -c credential.helper='!f() { echo "username=${MANIFEST_GIT_USER}"; echo "password=${MANIFEST_GIT_PASS}"; }; f' "$@"; }
+
+( cd k8s/overlays/staging
+  kustomize edit set image \
+    "orders-api=${API_IMAGE}" \
+    "orders-frontend=${FRONTEND_IMAGE}"
+  kustomize build . > /dev/null )          # refuse to commit manifests that do not render
+
+git add k8s/overlays/staging/kustomization.yaml
+if git diff --cached --quiet; then echo "No manifest change to commit."; exit 0; fi
+
+# [skip ci] is what breaks the trigger loop (see scmSkip in the Checkout stage).
+git commit -m "chore(release): deploy ${IMAGE_TAG} to staging [skip ci]"
+
+for attempt in 1 2 3; do
+  if g pull --rebase origin "$MANIFEST_BRANCH" && g push origin "HEAD:${MANIFEST_BRANCH}"; then exit 0; fi
+  echo "push attempt ${attempt} failed, retrying"; sleep 3
+done
+echo "Could not push manifest update" >&2; exit 1
+'''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      // Reports are the audit trail: Trivy JSON, SBOMs, test log, pushed digests.
+      archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true, fingerprint: true
+      sh 'docker image rm -f "$API_IMAGE" "$FRONTEND_IMAGE" orders-api:test >/dev/null 2>&1 || true'
+    }
+    success { echo "Released ${env.IMAGE_TAG}. ArgoCD will roll it out from Git." }
+    failure { echo 'Build failed. If Trivy Scan failed, open the archived reports/trivy-*.json.' }
+  }
+}

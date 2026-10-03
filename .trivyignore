@@ -1,0 +1,3 @@
+# Accepted vulnerabilities. Every entry needs: a reason, an owner, and an expiry date.
+# Format:  CVE-ID   # reason | owner | expires YYYY-MM-DD
+# Intentionally empty: the gate is meant to fail until a finding is fixed or consciously accepted.
