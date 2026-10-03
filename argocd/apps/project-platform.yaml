@@ -1,0 +1,26 @@
+# Guardrails for cluster add-ons (monitoring, scanners, sealed-secrets). These legitimately
+# need cluster-scoped resources (CRDs, ClusterRoles), so this project is broader than "orders",
+# but still pinned to: this Git repo + three named chart repositories + named namespaces.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Platform add-ons
+  sourceRepos:
+    - https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+    - https://prometheus-community.github.io/helm-charts
+    - https://bitnami-labs.github.io/sealed-secrets
+    - https://aquasecurity.github.io/helm-charts/
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: monitoring }
+    - { server: https://kubernetes.default.svc, namespace: sealed-secrets }
+    - { server: https://kubernetes.default.svc, namespace: trivy-system }
+    - { server: https://kubernetes.default.svc, namespace: orders }   # ServiceMonitor targets live here
+  clusterResourceWhitelist:
+    - { group: "*", kind: "*" }
+  namespaceResourceWhitelist:
+    - { group: "*", kind: "*" }
