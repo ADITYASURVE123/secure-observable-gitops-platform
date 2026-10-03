@@ -1,0 +1,26 @@
+# Argo CD itself, installed from the upstream manifest pinned to an exact release tag.
+# Apply with server-side apply (the CRDs are too large for client-side apply):
+#   kubectl apply --server-side --force-conflicts -k argocd/install        (see `make argocd-up`)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v3.3.6/manifests/install.yaml
+  - ingress.yaml
+patches:
+  - target: { kind: ConfigMap, name: argocd-cmd-params-cm }
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          # TLS terminates at the ingress; the server speaks plain HTTP inside the cluster.
+          server.insecure: "true"
+  - target: { kind: ConfigMap, name: argocd-cm }
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          # Default is 3m. 60s makes a Git change visible in the cluster fast enough for a demo.
+          timeout.reconciliation: 60s
+          # Label tracking can collide with other tools' labels; annotation tracking is the v3 default and safer.
+          application.resourceTrackingMethod: annotation
