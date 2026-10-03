@@ -16,3 +16,5 @@ dist/
 # Local artifacts
 reports/
 *.log
+.drill-state
+dist/
