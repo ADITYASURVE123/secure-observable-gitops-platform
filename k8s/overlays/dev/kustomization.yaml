@@ -9,6 +9,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - APP_ENV=dev
+      - CHAOS_ENABLED=true   # demo only: enables /chaos/crash for the incident drill
 replicas:
   - name: api
     count: 1

@@ -13,6 +13,7 @@ configMapGenerator:
       - DB_PORT=5432
       - DB_NAME=orders
       - APP_ENV=base
+      - CHAOS_ENABLED=false
 # Placeholders: overlays set the real registry and tag.
 images:
   - name: orders-api

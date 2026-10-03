@@ -10,6 +10,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - APP_ENV=staging
+      - CHAOS_ENABLED=true   # demo only: enables /chaos/crash for the incident drill
 images:
   - name: orders-api
     newName: ghcr.io/adityasurve123/orders-api
