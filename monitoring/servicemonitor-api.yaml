@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: orders-platform
+spec:
+  namespaceSelector:
+    matchNames: [orders]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api      # the api Service (port is named "http")
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+  # Resulting series carry job="api" and namespace="orders", which the dashboards and rules rely on.
