@@ -6,6 +6,7 @@ resources:
   - postgres.yaml
   - api.yaml
   - frontend.yaml
+  - networkpolicies.yaml
 configMapGenerator:
   - name: api-config
     literals:
