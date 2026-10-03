@@ -10,7 +10,10 @@ API_IMAGE      ?= orders-api:dev
 FRONTEND_IMAGE ?= orders-frontend:dev
 VERSION        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 
-.PHONY: help cluster-up build load secrets deploy undeploy-dev test smoke status teardown argocd-up argocd-bootstrap argocd-password argocd-repo-creds gitops-status verify-gitops jenkins-up jenkins-down jenkins-logs jenkins-lock
+.PHONY: help cluster-up build load secrets monitoring-secrets deploy undeploy-dev test validate verify-pins smoke status teardown \
+	argocd-up argocd-bootstrap argocd-password argocd-repo-creds gitops-status verify-gitops \
+	seal-secrets grafana-password urls load-test netpol-test trivy-report drill drill-summary \
+	jenkins-up jenkins-down jenkins-logs jenkins-lock jenkins-monitor-up package
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -53,9 +56,12 @@ argocd-up: ## Install Argo CD (pinned v3.3.6) and wait until it is ready
 argocd-repo-creds: ## Only for a PRIVATE repo: register repo credentials from ci/.env
 	./scripts/argocd-repo-secret.sh
 
-argocd-bootstrap: secrets ## Create the DB secret, then apply the root app (app-of-apps); Argo CD does the rest
+argocd-bootstrap: secrets monitoring-secrets ## Create the DB secret, then apply the root app (app-of-apps); Argo CD does the rest
 	kubectl apply -f argocd/bootstrap/root-app.yaml
 	@echo "Watch: make gitops-status"
+
+monitoring-secrets: ## Create the Grafana admin Secret (random password, not in Git)
+	./scripts/bootstrap-monitoring-secrets.sh
 
 argocd-password: ## Print the initial Argo CD admin password
 	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
@@ -66,7 +72,7 @@ gitops-status: ## Show Argo CD applications and their sync/health state
 verify-gitops: ## Prove CI cannot deploy (no kubectl/helm/kubeconfig in Jenkins)
 	./scripts/verify-gitops-boundary.sh
 
-test: ## Unit tests (in Docker), manifest rendering, then smoke test if the cluster is up
+test: validate ## Offline checks, unit tests (in Docker), manifest rendering, smoke test if the app is deployed
 	docker build --target test app/api
 	kubectl kustomize k8s/overlays/dev >/dev/null && echo "dev overlay renders"
 	kubectl kustomize k8s/overlays/staging >/dev/null && echo "staging overlay renders"
@@ -93,6 +99,50 @@ jenkins-logs: ## Follow Jenkins logs
 
 jenkins-lock: ## Resolve Jenkins plugins to exact versions -> ci/plugins.lock.txt (commit it)
 	./ci/scripts/lock-plugins.sh
+
+validate: ## Offline quality gate: syntax, secrets scan, pinned tags, manifests render
+	./scripts/validate-repo.sh
+
+verify-pins: ## Check that every pinned image/chart/tool version still exists upstream
+	./scripts/verify-pins.sh
+
+seal-secrets: ## Encrypt your Slack webhook into a SealedSecret (safe to commit)
+	./scripts/seal-secrets.sh
+
+grafana-password: ## Print the Grafana admin password
+	@kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d; echo
+
+urls: ## Where everything lives
+	@echo "App          http://localhost:8080"
+	@echo "Jenkins      http://localhost:8081   (admin / JENKINS_ADMIN_PASSWORD in ci/.env)"
+	@echo "Argo CD      http://argocd.localhost:8080   (admin / make argocd-password)"
+	@echo "Grafana      http://grafana.localhost:8080  (admin / make grafana-password)"
+	@echo "Prometheus   http://prometheus.localhost:8080"
+	@echo "Alertmanager http://alertmanager.localhost:8080"
+
+PROFILE ?= load
+load-test: ## k6 load test through the ingress (PROFILE=smoke|steady|load|incident)
+	PROFILE=$(PROFILE) ./scripts/run-k6.sh
+
+netpol-test: ## Prove NetworkPolicies are enforced
+	./scripts/netpol-test.sh
+
+trivy-report: ## In-cluster scan results from Trivy Operator
+	kubectl -n $(NAMESPACE) get vulnerabilityreports.aquasecurity.github.io -o wide
+	kubectl -n $(NAMESPACE) get configauditreports.aquasecurity.github.io -o wide
+
+drill: ## Guided incident drill with screenshot pauses
+	./scripts/incident-drill.sh full
+
+drill-summary: ## Detect/recover times from the last drill
+	./scripts/incident-drill.sh summary
+
+jenkins-monitor-up: ## (optional) Scrape Jenkins build health into Prometheus/Grafana
+	./scripts/link-jenkins-monitoring.sh
+	kubectl apply -f argocd/optional/jenkins-monitoring.yaml
+
+package: ## Build dist/secure-observable-gitops-platform.zip
+	./scripts/package.sh
 
 teardown: ## Delete the Kind cluster
 	kind delete cluster --name $(CLUSTER)

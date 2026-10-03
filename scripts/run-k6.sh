@@ -7,7 +7,7 @@ K6_IMAGE="${K6_IMAGE:-grafana/k6:1.0.0}"
 if [ "$(uname -s)" = "Linux" ]; then net=(--network host); base="${BASE_URL:-http://localhost:8080}"
 else net=(); base="${BASE_URL:-http://host.docker.internal:8080}"; fi
 
-exec docker run --rm -i "${net[@]}" \
+exec docker run --rm -i ${net[@]+"${net[@]}"} \
   -e BASE_URL="$base" -e PROFILE="${PROFILE:-smoke}" -e DURATION="${DURATION:-2m}" \
   -e FAIL_RATE="${FAIL_RATE:-0}" -e DELAY_MS="${DELAY_MS:-0}" \
   ${K6_EXTRA_ARGS:-} \
