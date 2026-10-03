@@ -10,7 +10,7 @@ API_IMAGE      ?= orders-api:dev
 FRONTEND_IMAGE ?= orders-frontend:dev
 VERSION        ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 
-.PHONY: help cluster-up build load secrets deploy test smoke status teardown jenkins-up jenkins-down jenkins-logs jenkins-lock
+.PHONY: help cluster-up build load secrets deploy undeploy-dev test smoke status teardown argocd-up argocd-bootstrap argocd-password argocd-repo-creds gitops-status verify-gitops jenkins-up jenkins-down jenkins-logs jenkins-lock
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -39,10 +39,38 @@ deploy: load secrets ## Build, load and deploy the dev overlay; wait for rollout
 	kubectl -n $(NAMESPACE) rollout status deployment/frontend --timeout=120s
 	@echo "App is up: http://localhost:8080"
 
+undeploy-dev: ## Remove the Phase-1 dev deployment (and namespace) before handing the namespace to Argo CD
+	kubectl delete -k k8s/overlays/dev --ignore-not-found
+
+argocd-up: ## Install Argo CD (pinned v3.3.6) and wait until it is ready
+	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+	kubectl apply --server-side --force-conflicts -k argocd/install
+	kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
+	kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
+	kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
+	@echo "Argo CD UI: http://argocd.localhost:8080  (user: admin, password: make argocd-password)"
+
+argocd-repo-creds: ## Only for a PRIVATE repo: register repo credentials from ci/.env
+	./scripts/argocd-repo-secret.sh
+
+argocd-bootstrap: secrets ## Create the DB secret, then apply the root app (app-of-apps); Argo CD does the rest
+	kubectl apply -f argocd/bootstrap/root-app.yaml
+	@echo "Watch: make gitops-status"
+
+argocd-password: ## Print the initial Argo CD admin password
+	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+gitops-status: ## Show Argo CD applications and their sync/health state
+	kubectl -n argocd get applications.argoproj.io
+
+verify-gitops: ## Prove CI cannot deploy (no kubectl/helm/kubeconfig in Jenkins)
+	./scripts/verify-gitops-boundary.sh
+
 test: ## Unit tests (in Docker), manifest rendering, then smoke test if the cluster is up
 	docker build --target test app/api
 	kubectl kustomize k8s/overlays/dev >/dev/null && echo "dev overlay renders"
 	kubectl kustomize k8s/overlays/staging >/dev/null && echo "staging overlay renders"
+	./scripts/verify-gitops-boundary.sh
 	@if kubectl -n $(NAMESPACE) get deploy api >/dev/null 2>&1; then ./scripts/smoke-test.sh; \
 	else echo "cluster app not deployed - skipping smoke test (run 'make deploy')"; fi
 
