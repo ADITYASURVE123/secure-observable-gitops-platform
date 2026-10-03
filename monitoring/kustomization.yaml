@@ -1,0 +1,19 @@
+# Rendered by the `monitoring-config` Argo CD Application (path: monitoring).
+# Kustomize turns each dashboard JSON file into a ConfigMap that the Grafana sidecar loads.
+# `scripts/seal-secrets.sh` appends the SealedSecret entry below after you create it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - servicemonitor-api.yaml
+  - rules/orders-alerts.yaml
+configMapGenerator:
+  - name: grafana-dashboard-orders
+    files:
+      - dashboards/orders-red-slo.json
+    options:
+      disableNameSuffixHash: true     # a stable name lets Grafana update the dashboard in place
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: "Orders"

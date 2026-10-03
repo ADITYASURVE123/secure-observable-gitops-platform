@@ -1,0 +1,23 @@
+# Our own monitoring objects (ServiceMonitor, PrometheusRules, Grafana dashboards, sealed
+# Alertmanager secret), rendered with Kustomize from /monitoring. Wave 3: needs the CRDs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/ADITYASURVE123/secure-observable-gitops-platform.git
+    targetRevision: main
+    path: monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, SkipDryRunOnMissingResource=true, ServerSideApply=true]
+    retry: { limit: 8, backoff: { duration: 15s, factor: 2, maxDuration: 5m } }
